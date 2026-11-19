@@ -21,6 +21,8 @@ export function createBashTool(ctx: AgentContext) {
       "Network access is disabled. No external runtimes (node, python, etc.) are available.",
     parameters: Type.Object({
       command: Type.String({
+        minLength: 1,
+        pattern: "\\S",
         description:
           "Bash command(s) to execute. Can be a single command or a script with multiple lines. " +
           "Supports pipes (|), redirections (>, >>), command chaining (&&, ||, ;), " +

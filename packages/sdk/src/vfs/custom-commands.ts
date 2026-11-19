@@ -269,6 +269,50 @@ const docxToText: DescribedCommand = {
   },
 };
 
+const xlsxToJson: DescribedCommand = {
+  promptSnippet:
+    "- xlsx-to-json <file> <outfile> [sheet] [range] — Read Excel values, formulas, addresses and stored fill colors as JSONL. Use for color-based rules; max 10000 cells per range. Conditional formatting is not evaluated.",
+  command: {
+    name: "xlsx-to-json",
+    load: async () =>
+      defineCommand("xlsx-to-json", async (args, ctx) => {
+        if (args.length < 2 || args.length > 4) {
+          return {
+            stdout: "",
+            stderr: "Usage: xlsx-to-json <file> <outfile> [sheet] [A1:Q70]",
+            exitCode: 1,
+          };
+        }
+        try {
+          const [input, output, sheet, range] = args;
+          if (resolvePath(ctx.cwd, input) === resolvePath(ctx.cwd, output)) {
+            throw new Error("Output must differ from the input workbook.");
+          }
+          const data = await resolveVfsPath(ctx, input);
+          const { spreadsheetToJsonLines } = await import("./xlsx-json");
+          const text = spreadsheetToJsonLines(data, sheet, range);
+          const outputPath = await writeVfsOutput(ctx, output, text);
+          return {
+            stdout: JSON.stringify({
+              success: true,
+              path: outputPath,
+              lines: text.split("\n").length,
+              nextAction: "Read the JSONL output with read offset/limit.",
+            }),
+            stderr: "",
+            exitCode: 0,
+          };
+        } catch (error) {
+          return {
+            stdout: "",
+            stderr: error instanceof Error ? error.message : String(error),
+            exitCode: 1,
+          };
+        }
+      }),
+  },
+};
+
 const xlsxToCsv: DescribedCommand = {
   promptSnippet:
     "- xlsx-to-csv <file> <outfile> [sheet] — Convert XLSX/XLS/ODS sheet to CSV. Sheet by name or 0-based index.",
@@ -600,6 +644,7 @@ export function getSharedCustomCommands(
     pdfToImages,
     docxToText,
     xlsxToCsv,
+    xlsxToJson,
     createWebSearchCmd(ns),
     createWebFetchCmd(ns),
   ];

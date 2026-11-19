@@ -23,16 +23,20 @@ export function createReadTool(ctx: AgentContext) {
       "Use 'bash ls /home/user/uploads' to see available files.",
     parameters: Type.Object({
       path: Type.String({
+        minLength: 1,
+        pattern: "\\S",
         description:
           "Path to the file. Can be absolute (starting with /) or relative to /home/user/uploads/. Example: 'image.png' or '/home/user/uploads/data.csv'",
       }),
       offset: Type.Optional(
-        Type.Number({
+        Type.Integer({
+          minimum: 1,
           description: "Line number to start reading from (1-indexed)",
         }),
       ),
       limit: Type.Optional(
-        Type.Number({
+        Type.Integer({
+          minimum: 1,
           description: "Maximum number of lines to read",
         }),
       ),
@@ -82,6 +86,12 @@ export function createReadTool(ctx: AgentContext) {
             ],
             details: undefined,
           };
+        }
+
+        if (/\.(xlsx|xls|ods)$/i.test(filename)) {
+          return toolError(
+            "Spreadsheet is binary. Use bash xlsx-to-json for values and fill colors, or xlsx-to-csv for values only, then read the output file.",
+          );
         }
 
         const data = await ctx.readFileBuffer(fullPath);
