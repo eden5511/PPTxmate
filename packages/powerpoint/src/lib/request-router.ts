@@ -56,6 +56,10 @@ export function routePowerPointRequest(
 ): PowerPointTaskRoute {
   const text = userMessage.trim();
   if (CREATE_RE.test(text)) return "create";
+  // Data-driven work needs chart/XML tools even when phrased as "read Excel".
+  if (/(excel|xlsx|csv|电子表格|数据填充|填充数据|折线图|柱形图|柱状图|坐标轴)/i.test(text)) {
+    return "layout";
+  }
   if (VERIFY_RE.test(text)) return "verify";
   if (TRANSLATION_AUDIT_RE.test(text)) return "translationAudit";
   if (STRUCTURE_RE.test(text)) return "layout";
@@ -80,6 +84,7 @@ export interface CompactContextMessage {
   role: string;
   content?: unknown;
   toolCallId?: string;
+  isError?: boolean;
 }
 
 const METADATA_RE = /<ppt_context>\r?\n[\s\S]*?\r?\n<\/ppt_context>\r?\n\r?\n/;
@@ -414,6 +419,7 @@ function firstEditScope(
 function buildToolProgressReceipt(
   toolCall: CompactToolCall,
   content: unknown,
+  isError = false,
 ): string {
   const parsed = parseToolResultContent(content);
   const payload = isJsonRecord(parsed?.result) ? parsed.result : undefined;
@@ -426,10 +432,22 @@ function buildToolProgressReceipt(
   const receipt: JsonRecord = {
     toolName: toolCall.name.replace(/[^a-zA-Z0-9_.-]/g, "").slice(0, 80),
     toolCallId: toolCall.id,
+    compacted: true,
+    payloadOmitted: true,
   };
 
   const success = firstSafeField([parsed], "success");
   if (typeof success === "boolean") receipt.success = success;
+  if (isError) receipt.isError = true;
+  for (const field of ["error", "code", "mutationState", "mutationCompleted"]) {
+    const value = firstSafeField([parsed], field);
+    if (value !== undefined) receipt[field] = value;
+  }
+  // Shell and file reads are often plain text, not JSON. Never turn them into
+  // an unexplained toolName/toolCallId envelope.
+  if (!parsed && (toolCall.name === "read" || toolCall.name === "bash")) {
+    receipt.outputPreview = contentToText(content).slice(0, 256);
+  }
 
   const scope: JsonRecord = {};
   const explicitScopes = [parsed?.scope, payload?.scope].filter(isJsonRecord);
@@ -697,7 +715,11 @@ export function compactPowerPointContext<T extends CompactContextMessage>(
           message.content = [
             {
               type: "text",
-              text: buildToolProgressReceipt(toolCall, message.content),
+              text: buildToolProgressReceipt(
+                toolCall,
+                message.content,
+                message.isError,
+              ),
             },
           ] as unknown as T["content"];
         }
@@ -749,8 +771,39 @@ export function compactPowerPointContext<T extends CompactContextMessage>(
 
     let finalChars = textLength(result);
     if (finalChars > maxChars && newestPairedToolCallId) {
-      compactPair(newestPairedToolCallId);
+      // Shed the newest call's code first. Keep its just-returned data intact
+      // whenever possible so the model can consume it before compaction.
+      for (const message of result) {
+        if (message.role === "assistant" && Array.isArray(message.content)) {
+          message.content = (message.content as JsonRecord[]).map((block) =>
+            block.type === "toolCall" && block.id === newestPairedToolCallId
+              ? minimalToolCallBlock(block)
+              : block,
+          );
+        }
+      }
       finalChars = textLength(result);
+      if (finalChars > maxChars) {
+        const newest = result.find(
+          (message) =>
+            message.role === "toolResult" &&
+            message.toolCallId === newestPairedToolCallId,
+        );
+        const call = toolCalls.get(newestPairedToolCallId);
+        if (newest && call) {
+          const receipt = JSON.parse(
+            buildToolProgressReceipt(call, newest.content, newest.isError),
+          );
+          receipt.resultPreview = contentToText(newest.content).slice(
+            0,
+            Math.max(128, Math.min(4_000, Math.floor(maxChars / 4))),
+          );
+          receipt.nextAction =
+            "Result compacted, not execution failure. Read a smaller range; verify uncertain writes before retrying.";
+          newest.content = [{ type: "text", text: JSON.stringify(receipt) }];
+        }
+        finalChars = textLength(result);
+      }
     }
 
     while (finalChars > maxChars) {

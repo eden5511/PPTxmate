@@ -1,5 +1,6 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { Static, TObject } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 
 export type ToolResult = AgentToolResult<undefined>;
 
@@ -18,7 +19,29 @@ interface ToolConfig<T extends TObject> {
 export function defineTool<T extends TObject>(
   config: ToolConfig<T>,
 ): AgentTool {
-  return config as unknown as AgentTool;
+  return {
+    ...config,
+    execute: async (toolCallId, params, signal) => {
+      if (signal?.aborted) {
+        throw new DOMException("Tool execution aborted", "AbortError");
+      }
+      if (!Value.Check(config.parameters, params)) {
+        const fields = [...Value.Errors(config.parameters, params)]
+          .slice(0, 5)
+          .map((error) => error.path || "/");
+        return toolError(
+          `INVALID_ARGUMENTS: ${config.name}; check fields: ${fields.join(", ")}`,
+        );
+      }
+      const result = await config.execute(toolCallId, params, signal);
+      if (!result || !Array.isArray(result.content) || !result.content.length) {
+        return toolError(
+          "TOOL_RESULT_MISSING: execution returned no content; completion is unknown. Inspect state before retrying writes.",
+        );
+      }
+      return result;
+    },
+  } as AgentTool;
 }
 
 export function toolSuccess(data: unknown): ToolResult {

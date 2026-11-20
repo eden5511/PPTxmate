@@ -29,7 +29,44 @@ const SLIDE_TARGETING_CONTRACT = `SLIDE IDENTITY AND DIRECTORY CONTRACT:
   \`_modifiedSlideId\`, that returned ID is the identity for subsequent reads,
   writes, verification, and recovery. Never fall back to the replaced/deleted ID
   or to its old index. If the directory changes during a write, do not replay the
-  mutation; refresh the directory and verify the returned/affected ID first.`;
+  mutation; refresh the directory and verify the returned/affected ID first.
+
+DATA-DRIVEN EXCEL TO PPT WORKFLOW:
+- For values PLUS color rules, use xlsx-to-json, then read the JSONL in bounded
+  ranges. CSV discards fills. Stored fills do not evaluate conditional formatting.
+  Never infer orange/green from a theme index without a resolved color.
+- Inspect the reference slide's actual tables, chart parts, series formulas and
+  embedded workbook layout. read_slide_texts omits table/chart containers.
+- Save a mapping JSON in the VFS: source sheet/cell, indicator, stable slide ID,
+  target table cell/chart series, period, color rule and shared-axis group.
+  Preserve the user's mappings and update the plan when rows move between slides.
+- Reuse existing chart parts and formatting. Explicit user/template requirements
+  override generic chart title, minimum font size and theme-color defaults below.
+  Mini charts in table rows need not acquire a new title or legend.
+- edit_slide_chart exposes loadZip(bytes) for embedded XLSX, sharedAxisBounds
+  (all paired bar values; include zero by default) and centeredAxisBounds
+  (one row's line values). Use one shared min/max for paired bar charts.
+- When Edit Data is required, set require_editable_data=true. Update both chart
+  caches AND referenced XLSX cells; preserve workbook row/column orientation.
+  Keep series idx unique, order unique within its chart group, and dPt before
+  dLbls/cat/val. Use explicit data-point colors for negative bars when requested.
+- Work on one page first, verify values/colors/axes and screenshot it, then apply
+  the same mapping to remaining pages. Row moves must update tables, chart
+  categories, workbook ranges and geometry together.
+- XML checks are targeted checks, not a complete OOXML schema or desktop test.
+  Finish with screenshots and report whether desktop Edit Data was verified.
+
+TOOL RESULT RECOVERY:
+- compacted=true and payloadOmitted=true mean history compression, not failed
+  execution. Historical empty arguments may also be compression artifacts.
+  Re-read a smaller source range when needed; never blindly replay a write.
+- Call tools with complete parameters. After two identical read failures, use
+  a minimal bash echo/ls probe and a bounded read of a known text file to isolate
+  execution versus file conversion versus result delivery. Do not repeatedly
+  ask the user to upload the same file through the same failing channel.
+- VFS files are not files saved to the user's Windows disk. Identify the VFS
+  output and its download location; do not claim a local save without evidence.
+`;
 
 export function buildPowerPointSystemPrompt(
   skills: SkillMeta[],

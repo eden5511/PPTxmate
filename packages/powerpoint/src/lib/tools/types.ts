@@ -1,6 +1,7 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { resizeImage } from "@office-agents/core";
 import type { Static, TObject } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 import { capText, TOOL_RESULT_MAX_BYTES } from "./result-budget";
 
 export type ToolResult = AgentToolResult<undefined>;
@@ -34,7 +35,22 @@ export function defineTool<T extends TObject>(
     if (signal?.aborted) {
       throw new DOMException("Tool execution aborted", "AbortError");
     }
+    if (!Value.Check(config.parameters, params)) {
+      const fields = [...Value.Errors(config.parameters, params)]
+        .slice(0, 5)
+        .map((error) => error.path || "/");
+      return toolError(
+        `Invalid arguments for ${config.name}; check fields: ${fields.join(", ")}`,
+        { code: "INVALID_ARGUMENTS", mutationState: "not_started" },
+      );
+    }
     const result = await execute(toolCallId, params, signal);
+    if (!result || !Array.isArray(result.content) || !result.content.length) {
+      return toolError(
+        "Tool returned no content. Inspect the target before retrying a write.",
+        { code: "TOOL_RESULT_MISSING", mutationState: "uncertain" },
+      );
+    }
     if (!getModifiedSlide) return result;
     const first = result.content[0];
     if (!first || first.type !== "text") return result;
