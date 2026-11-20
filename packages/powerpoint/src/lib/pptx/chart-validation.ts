@@ -34,7 +34,13 @@ export async function chartSnapshot(zip: JSZip): Promise<Map<string, string>> {
   const snapshot = new Map<string, string>();
   for (const name of Object.keys(zip.files)) {
     if (/^ppt\/charts\/[^/]+\.xml$/.test(name)) {
-      snapshot.set(name, await zip.files[name].async("string"));
+      const xml = await zip.files[name].async("string");
+      const root = parseXml(xml, name).documentElement;
+      // Style/color parts share this directory but are not chart data.
+      // Identify charts by XML type, not a chart1.xml naming convention.
+      if (root.namespaceURI === CHART_NS && root.localName === "chartSpace") {
+        snapshot.set(name, xml);
+      }
     }
   }
   return snapshot;

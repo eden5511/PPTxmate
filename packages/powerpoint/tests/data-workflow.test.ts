@@ -77,6 +77,23 @@ describe("Excel to editable PPT workflow", () => {
     await expect(validateChartEdits(chartZip(series(0) + series(0)), new Map())).rejects.toThrow("duplicate series");
   });
 
+  it("ignores chart style/color parts while retaining custom chart filenames", async () => {
+    const zip = chartZip();
+    zip.file("ppt/charts/style1.xml",
+      '<cs:chartStyle xmlns:cs="http://schemas.microsoft.com/office/drawing/2012/chartStyle" id="102"/>');
+    zip.file("ppt/charts/colors1.xml",
+      '<cs:colorStyle xmlns:cs="http://schemas.microsoft.com/office/drawing/2012/chartStyle" id="10"/>');
+    const original = await zip.file("ppt/charts/chart1.xml")!.async("string");
+    zip.remove("ppt/charts/chart1.xml");
+    zip.file("ppt/charts/sales.xml", original);
+    zip.file("[Content_Types].xml",
+      '<Types><Override PartName="/ppt/charts/sales.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/></Types>');
+    expect([...((await chartSnapshot(zip)).keys())]).toEqual(["ppt/charts/sales.xml"]);
+    await expect(validateChartEdits(zip, new Map())).resolves.toBeUndefined();
+    zip.file("ppt/charts/sales.xml", original.replace("</c:barChart>", series(0) + "</c:barChart>"));
+    await expect(validateChartEdits(zip, new Map())).rejects.toThrow("duplicate series");
+  });
+
   it("rejects late dPt and out-of-range cached points", async () => {
     await expect(validateChartEdits(chartZip(series(0).replace("</c:ser>", '<c:dPt><c:idx val="0"/></c:dPt></c:ser>')), new Map())).rejects.toThrow("dPt");
     await expect(validateChartEdits(chartZip(series(0).replace('ptCount val="1"', 'ptCount val="0"')), new Map())).rejects.toThrow("cache point");
